@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 import numpy as np
 import casadi as cs
 
@@ -197,7 +198,7 @@ class Planner(Manager):
         return solution[f"{self.stretch_name}/q"], \
                solution[f"{self.planar_mobile_base_name}/y"]
 
-def main(path="figure_eight"):
+def main(arg="figure_eight"):
     planner = Planner()
 
     # Initial Arm Configuration
@@ -212,15 +213,15 @@ def main(path="figure_eight"):
     Rn = cs.DM(planner.stretch.get_global_link_rotation("link_grasp_center", qc)).full()
     t  = cs.DM(planner.t_).full()
 
-    if path == "figure_eight":
+    if arg == "figure_eight":
         path = get_figure_eight_path(planner.T, t, 0.3, 0.5, 0.1)
-    elif path == "three_point":
+    elif arg == "three_point":
         path = get_three_point_path(planner.T, 
                                  -1.0, -1.0, -0.2, 
                                  0.0, -1.0, 0.0, 
                                  0.0, 0.0, 0.0)
     else:
-        raise ValueError("Invalid path type")
+        raise ValueError("Invalid option: choose between figure_eight and three_point")
 
     # Transform path to end effector in global frame
     for k in range(planner.T):
@@ -297,4 +298,5 @@ def get_three_point_path(T, x_end1, y_end1, z_end1,
     return path
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main_arg = sys.argv[1] if len(sys.argv) > 1 else "figure_eight"
+    sys.exit(main(main_arg))
