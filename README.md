@@ -16,8 +16,8 @@ pip install pyoptas
 ### Notes
 This example runs in python 3.8 and last i checked the optas visualization is broken in python 3.10
 ### to run the examples from the videos:
-```python3 stretch_traj_opt.py figure_eight```  
-```python3 stretch_traj_opt.py three_point```
+```python3 your/path/to/script/stretch_traj_opt.py figure_eight```  
+```python3 your/path/to/script/stretch_traj_opt.py three_point```
 
 
 https://github.com/michal-cie/stretch_trajopt/assets/90311578/75120602-262f-4d08-91e3-6aca515f0d0a
