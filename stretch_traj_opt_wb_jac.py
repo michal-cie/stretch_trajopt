@@ -53,8 +53,8 @@ class Planner(Manager):
         # =====================================
 
         # Setup
-        self.T = 200  # no. time steps in trajectory
-        self.Tmax = 2  # total trajectory time
+        self.T = 20  # no. time steps in trajectory
+        self.Tmax = 0.5  # total trajectory time
         t_ = optas.linspace(0, self.Tmax, self.T)
         self.t_ = t_
         self.dt = float((t_[1] - t_[0]).toarray()[0, 0])
@@ -199,12 +199,10 @@ class Planner(Manager):
                                             reduce_constraint=True)
         ############ Integrate Joint velocities into positions ###########
 
-        for t in range(self.T - 1):
+        for t in range(self.T-1):
+            x = builder.get_model_state(self.planar_mobile_base.name, t)
             v = builder._decision_variables["v"][t]
             w = builder._decision_variables["w"][t]
-
-            x = builder.get_model_state(self.planar_mobile_base.name, t)
-            x_next = builder.get_model_state(self.planar_mobile_base.name, t + 1)
 
             q1 = builder.get_model_state(self.simple_lift.name, t)
             q2 = builder.get_model_state(self.simple_extension.name, t)
@@ -215,21 +213,17 @@ class Planner(Manager):
             
             path_vel = (path[:, t + 1] - path[:, t]) / self.dt
             q_arm = cs.vertcat(q1, q2/4, q2/4, q2/4, q2/4, q3)
-            full_body_jac = self.get_full_body_jacobian(q_arm)
-            ee_vel = full_body_jac @ cs.vertcat(v, w, qd1, qd2/4, qd2/4, qd2/4, qd2/4, qd3)
             
-            T_bw = cs.vertcat(cs.horzcat(cs.cos(x[2]), -cs.sin(x[2]), 0, x[0]),
-                              cs.horzcat(cs.sin(x[2]), cs.cos(x[2]),  0, x[1]),
-                              cs.horzcat(0,            0,             1, 0),
-                              cs.horzcat(0,            0,             0, 1))
-            Ad_Tbw = self.adjoint_matrix(T_bw)
-            ee_vel_global = Ad_Tbw @ ee_vel
+            full_body_jac = self.get_full_body_jacobian(q_arm, x)
+            joint_rates = cs.vertcat(v, w, qd1, qd2/4, qd2/4, qd2/4, qd2/4, qd3)
+            ee_vel = full_body_jac @ joint_rates
 
             q_arm_full = cs.vertcat(x[0], x[1], x[2], q_arm)
             p_ee = self.stretch_full.get_global_link_position("link_grasp_center", q_arm_full)
-            p_ee_next = p_ee + self.dt * ee_vel_global[0:3]
+
+            p_ee_next = p_ee + self.dt * ee_vel[0:3]
             builder.add_cost_term(f"ee_pos_error{t}", 1e4 * optas.sumsqr(path[:,t+1] - p_ee_next))
-            # builder.add_cost_term(f"ee_vel_error{t}", 1e3 * optas.sumsqr(ee_vel_global[0:3] - path_vel))
+            # builder.add_cost_term(f"ee_vel_error{t}", 1e3 * optas.sumsqr(ee_vel[0:3] - path_vel))
 
         # Q = cs.SX.zeros(self.stretch.ndof, self.T)
         # for t in range(self.T):
@@ -300,9 +294,14 @@ class Planner(Manager):
 
         return Ad_T
 
-    def get_base_jacobian(self, q):
+    def get_base_jacobian(self, q, x):
         T_0e = self.stretch.get_global_link_transform("link_grasp_center", q)
-        T_0e_inv = invt(T_0e)
+        T_be_inv = invt(T_0e)
+        T_bw = cs.vertcat(cs.horzcat(cs.cos(x[2]), -cs.sin(x[2]), 0, x[0]),
+                            cs.horzcat(cs.sin(x[2]), cs.cos(x[2]),  0, x[1]),
+                            cs.horzcat(0,            0,             1, 0),
+                            cs.horzcat(0,            0,             0, 1))
+        T_bw_inv = invt(T_bw)
 
         F_6 = cs.vertcat(cs.horzcat(1, 0),
                          cs.horzcat(0, 0),
@@ -311,15 +310,15 @@ class Planner(Manager):
                          cs.horzcat(0, 0),
                          cs.horzcat(0, 1))
         
-        Ad_T_0e = self.adjoint_matrix(T_0e_inv)
+        Ad_T_0e = self.adjoint_matrix(T_be_inv * T_bw_inv)
 
 
         jacobian_base = Ad_T_0e @ F_6
         return jacobian_base
     
-    def get_full_body_jacobian(self, q):
+    def get_full_body_jacobian(self, q, x):
         jacobian_arm = self.stretch.get_global_link_geometric_jacobian("link_grasp_center", q)
-        jacobian_base = self.get_base_jacobian(q)
+        jacobian_base = self.get_base_jacobian(q, x)
         return cs.horzcat(jacobian_base, jacobian_arm)
 
 
