@@ -6,55 +6,6 @@
 <robot name="stretch">
   <!--<xacro:include filename="stretch_gripper_with_puller.xacro" />-->
   <!--<xacro:include filename="stretch_dry_erase_marker.xacro" />-->
-
-  <link name="virtual_base" />
-  <!-- Joint for translation in x-direction of base_link frame -->
-  <joint name="x_prismatic_joint" type="fixed">
-    <parent link="virtual_base"/>
-    <child link="x_virtual_link"/>
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <axis xyz="1 0 0"/>
-    <limit lower="-100.0" upper="100.0" effort="10" velocity="1"/>
-  </joint>
-
-  <!-- Virtual link after x translation -->
-  <link name="x_virtual_link" />
-
-  <!-- Joint for translation in y-direction -->
-  <joint name="y_prismatic_joint" type="fixed">
-    <parent link="x_virtual_link"/>
-    <child link="y_virtual_link"/>
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <axis xyz="0 1 0"/>
-    <limit lower="-100.0" upper="100.0" effort="1" velocity="1.0"/>
-  </joint>
-
-  <!-- Virtual link after y translation -->
-  <link name="y_virtual_link" />
-
-  <!-- Joint for rotation in z-direction -->
-  <joint name="z_revolute_joint" type="fixed">
-    <parent link="y_virtual_link"/>
-    <child link="z_virtual_link"/>
-    <origin rpy="0 0 0" xyz="0 0 0"/>
-    <axis xyz="0 0 1"/>
-    <limit effort="1000" velocity="10"/>
-  </joint>
-
-  <!-- Virtual link after z rotation -->
-  <link name="z_virtual_link" >
-    <inertial>
-      <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="1.0723782659782"/>
-      <inertia ixx="0.00310580907710135" ixy="1.5182848191076E-06" ixz="0.00041690466732394" iyy="0.00433798719991832" iyz="1.33487716258445E-05" izz="0.0037204727467362"/>
-    </inertial>
-  </link>
-
-  <joint name="virtual_base" type="fixed">
-    <parent link="z_virtual_link"/>
-    <child link="base_link"/>
-    <axis xyz="0 0 0"/>
-  </joint>
   
   <link name="base_link">
     <inertial>
