@@ -22,25 +22,6 @@ class PlanarMobileBase(optas.TaskModel):
         dtheta = w
         return [dx, dy, dtheta]
 
-class SimpleLift(optas.TaskModel):
-    def __init__(self):
-        super().__init__(
-            "simple_arm", 1, time_derivs=[0, 1, 2],
-            dlim={0: [0, 1.1], 1: [-1, 1], 2:[-1, 1]}  # limits for position and velocity
-        )
-class SimpleExtension(optas.TaskModel):
-    def __init__(self):
-        super().__init__(
-            "simple_extension", 1, time_derivs=[0, 1, 2],
-            dlim={0: [0, 0.52], 1: [-1, 1], 2:[-1, 1]}  # limits for position and velocity
-        )
-class SimpleWristYaw(optas.TaskModel):
-    def __init__(self):
-        super().__init__(
-            "simple_wrist_yaw", 1, time_derivs=[0, 1, 2],
-            dlim={0: [-1.75, 4.0], 1: [-1, 1], 2:[-1, 1]}  # limits for position and velocity
-        )
-
 class Planner(Manager):
     def setup_solver(self):
         # Setup robot  ========================
@@ -54,7 +35,7 @@ class Planner(Manager):
 
         # Setup
         self.T = 20  # no. time steps in trajectory
-        self.Tmax = 0.5  # total trajectory time
+        self.Tmax = 2  # total trajectory time
         t_ = optas.linspace(0, self.Tmax, self.T)
         self.t_ = t_
         self.dt = float((t_[1] - t_[0]).toarray()[0, 0])
@@ -70,37 +51,32 @@ class Planner(Manager):
         stretch_robot_model_input = robot_model_input.copy()
         stretch_robot_model_input["urdf_filename"] = filename_stretch_full
 
-        self.stretch = optas.RobotModel(**robot_model_input)
         self.stretch_full = optas.RobotModel(**stretch_robot_model_input)
-
+        
+        self.stretch = optas.RobotModel(**robot_model_input)
         self.stretch_name = self.stretch.get_name()
+        lower_pos_limits, upper_pos_limits = self.stretch.get_limits(0)
+        lower_vel_limits, upper_vel_limits = self.stretch.get_limits(1)
 
         self.planar_mobile_base = PlanarMobileBase()
         self.planar_mobile_base_name = self.planar_mobile_base.name
         base_lower_vel_limits, base_upper_vel_limits = self.planar_mobile_base.get_limits(1)
         base_lower_acc_limits, base_upper_acc_limits = self.planar_mobile_base.get_limits(2)
 
-        self.simple_lift = SimpleLift()
-        self.simple_lift_name = self.simple_lift.name
-        lift_lower_pos_limits, lift_upper_pos_limits = self.simple_lift.get_limits(0)
-        lift_lower_vel_limits, lift_upper_vel_limits = self.simple_lift.get_limits(1)
-
-        self.simple_extension = SimpleExtension()
-        self.simple_extension_name = self.simple_extension.name
-        extension_lower_pos_limits, extension_upper_pos_limits = self.simple_extension.get_limits(0)
-        extension_lower_vel_limits, extension_upper_vel_limits = self.simple_extension.get_limits(1)
-
-        self.simple_wrist_yaw = SimpleWristYaw()
-        self.simple_wrist_yaw_name = self.simple_wrist_yaw.name
-        wrist_yaw_lower_pos_limits, wrist_yaw_upper_pos_limits = self.simple_wrist_yaw.get_limits(0)
-        wrist_yaw_lower_vel_limits, wrist_yaw_upper_vel_limits = self.simple_wrist_yaw.get_limits(1)
 
         # Setup optimization builder
-        builder = optas.OptimizationBuilder(T=self.T, tasks=[self.planar_mobile_base,
-                                                             self.simple_lift,
-                                                             self.simple_extension,
-                                                             self.simple_wrist_yaw], robots=[self.stretch])
+        builder = optas.OptimizationBuilder(T=self.T, tasks=[self.planar_mobile_base], robots=[self.stretch])
 
+        # Stretch arm limits
+        builder.enforce_model_limits(self.stretch_name,
+                                     0,
+                                     lower_pos_limits,
+                                     upper_pos_limits)
+
+        builder.enforce_model_limits(self.stretch_name,
+                                     1,
+                                     lower_vel_limits,
+                                     upper_vel_limits)
         # Mobile base limits
         builder.enforce_model_limits(self.planar_mobile_base_name,
                                      1, 
@@ -110,30 +86,7 @@ class Planner(Manager):
                                      2, 
                                      base_lower_acc_limits,
                                      base_upper_acc_limits)
-        builder.enforce_model_limits(self.simple_lift_name,
-                                     0, 
-                                     lift_lower_pos_limits,
-                                     lift_upper_pos_limits)
-        builder.enforce_model_limits(self.simple_lift_name,
-                                     1, 
-                                     lift_lower_vel_limits,
-                                     lift_upper_vel_limits)
-        builder.enforce_model_limits(self.simple_extension_name,
-                                     0, 
-                                     extension_lower_pos_limits,
-                                     extension_upper_pos_limits)
-        builder.enforce_model_limits(self.simple_extension_name,
-                                     1, 
-                                     extension_lower_vel_limits,
-                                     extension_upper_vel_limits)
-        builder.enforce_model_limits(self.simple_wrist_yaw_name,
-                                     0, 
-                                     wrist_yaw_lower_pos_limits,
-                                     wrist_yaw_upper_pos_limits)
-        builder.enforce_model_limits(self.simple_wrist_yaw_name,
-                                     1, 
-                                     wrist_yaw_lower_vel_limits,
-                                     wrist_yaw_upper_vel_limits)
+
 
         # Setup parameters
         qc = builder.add_parameter(
@@ -149,42 +102,46 @@ class Planner(Manager):
         builder.fix_configuration(self.planar_mobile_base.name, config=base_init)
         # Constraint: mobile base init velocity
         builder.fix_configuration(self.planar_mobile_base.name, time_deriv=1)
-        # Constraint: mobile base final velocity
-        dxF = builder.get_model_state(self.planar_mobile_base.name, -1, time_deriv=1)
-        builder.add_equality_constraint("final_base_velocity", dxF)
+        # # Constraint: mobile base final velocity
+        # dxF = builder.get_model_state(self.planar_mobile_base.name, -1, time_deriv=1)
+        # builder.add_equality_constraint("final_base_velocity", dxF)
 
-        # Constraint: lift init position
-        builder.fix_configuration(self.simple_lift.name, config=qc[0])
-        # Constraint: lift init velocity
-        builder.fix_configuration(self.simple_lift.name, time_deriv=1)
-        # Constraint: lift final velocity
-        dqlF = builder.get_model_state(self.simple_lift.name, -1, time_deriv=1)
-        builder.add_equality_constraint("final_lift_velocity", dqlF)
-
-        # Constraint: extension init position
-        builder.fix_configuration(self.simple_extension.name, config=qc[1]+qc[2]+qc[3]+qc[4])
-        # Constraint: extension init velocity
-        builder.fix_configuration(self.simple_extension.name, time_deriv=1)
-        # Constraint: extension final velocity
-        dqeF = builder.get_model_state(self.simple_extension.name, -1, time_deriv=1)
-        builder.add_equality_constraint("final_extension_velocity", dqeF)
-
-        # Constraint: wrist_yaw init position
-        builder.fix_configuration(self.simple_wrist_yaw.name, config=qc[5])
-        # Constraint: wrist_yaw init velocity
-        builder.fix_configuration(self.simple_wrist_yaw.name, time_deriv=1)
-        # Constraint: wrist_yaw final velocity
-        dqwF = builder.get_model_state(self.simple_wrist_yaw.name, -1, time_deriv=1)
-        builder.add_equality_constraint("final_wrist_yaw_velocity", dqwF)
+        # Constraint: initial arm configuration
+        builder.fix_configuration(self.stretch_name, config=qc)
+        # Constraint: initial joint vel is zero
+        builder.fix_configuration(
+            self.stretch_name, time_deriv=1
+        )  
+        # # Constraint: final joint vel is zero
+        # dqF = builder.get_model_state(self.stretch_name, -1, time_deriv=1)
+        # builder.add_equality_constraint("final_joint_velocity", dqF)
 
         # Decision variables
         builder.add_decision_variables("v", n=self.T)  # Linear velocity
         builder.add_decision_variables("w", n=self.T)  # Angular velocity
 
         #builder.integrate_model_states(self.planar_mobile_base_name, time_deriv=1, dt=self.dt)
-        builder.integrate_model_states(self.simple_lift_name, time_deriv=1, dt=self.dt)
-        builder.integrate_model_states(self.simple_extension_name, time_deriv=1, dt=self.dt)
-        builder.integrate_model_states(self.simple_wrist_yaw_name, time_deriv=1, dt=self.dt)
+        builder.integrate_model_states(
+            self.stretch_name,
+            time_deriv=1,  # i.e. integrate velocities to positions
+            dt=self.dt,
+        )
+
+        # Get joint trajectory
+        Q = builder.get_model_states(
+            self.stretch_name
+        )
+        dQ = builder.get_model_states(
+            self.stretch_name,
+            time_deriv=1
+        )
+        X = builder.get_model_states(
+            self.planar_mobile_base.name
+        )
+        dX = builder.get_model_states(
+            self.planar_mobile_base_name, 
+            time_deriv=1
+        )
 
         ################# Differntial Drive Constraints #################
         # Constraint: Add diff drive kinematics
@@ -204,26 +161,27 @@ class Planner(Manager):
             v = builder._decision_variables["v"][t]
             w = builder._decision_variables["w"][t]
 
-            q1 = builder.get_model_state(self.simple_lift.name, t)
-            q2 = builder.get_model_state(self.simple_extension.name, t)
-            q3 = builder.get_model_state(self.simple_wrist_yaw.name, t)
-            qd1 = builder.get_model_state(self.simple_lift.name, t, time_deriv=1)
-            qd2 = builder.get_model_state(self.simple_extension.name, t, time_deriv=1)
-            qd3 = builder.get_model_state(self.simple_lift.name, t, time_deriv=1)
+            path_vel = ((path[:, t + 1] - path[:, t]) / self.dt)
             
-            path_vel = (path[:, t + 1] - path[:, t]) / self.dt
-            q_arm = cs.vertcat(q1, q2/4, q2/4, q2/4, q2/4, q3)
+            q_arm = Q[:, t]
+            qd_arm = dQ[:, t]
             
             full_body_jac = self.get_full_body_jacobian(q_arm, x)
-            joint_rates = cs.vertcat(v, w, qd1, qd2/4, qd2/4, qd2/4, qd2/4, qd3)
+            joint_rates = cs.vertcat(v, w, qd_arm)
             ee_vel = full_body_jac @ joint_rates
 
-            q_arm_full = cs.vertcat(x[0], x[1], x[2], q_arm)
-            p_ee = self.stretch_full.get_global_link_position("link_grasp_center", q_arm_full)
+            q_full = cs.vertcat(x[0], x[1], x[2], q_arm)
+            T_bw = cs.vertcat(cs.horzcat(cs.cos(-x[2]), -cs.sin(-x[2]), 0, x[0]),
+                                cs.horzcat(cs.sin(-x[2]), cs.cos(-x[2]),  0, x[1]),
+                                cs.horzcat(0,            0,             1, 0),
+                                cs.horzcat(0,            0,             0, 1))
+            Ad_Tbe = self.adjoint_matrix(T_bw)
+
+            p_ee = self.stretch_full.get_global_link_position("link_grasp_center", q_full)
 
             p_ee_next = p_ee + self.dt * ee_vel[0:3]
-            builder.add_cost_term(f"ee_pos_error{t}", 1e4 * optas.sumsqr(path[:,t+1] - p_ee_next))
-            # builder.add_cost_term(f"ee_vel_error{t}", 1e3 * optas.sumsqr(ee_vel[0:3] - path_vel))
+            # builder.add_cost_term(f"ee_pos_error{t}", 1e4 * optas.sumsqr(path[:,t+1] - p_ee_next))
+            builder.add_cost_term(f"ee_vel_error{t}", 1e8 * optas.sumsqr(path_vel - ee_vel[0:3]))
 
         # Q = cs.SX.zeros(self.stretch.ndof, self.T)
         # for t in range(self.T):
@@ -235,15 +193,11 @@ class Planner(Manager):
         # builder.add_cost_term("deviation_nominal_config", 0.1 * optas.sumsqr(Qn - Q))
 
         # Cost: minimize joint and base velocities
-        dX = builder.get_model_states(self.planar_mobile_base_name, time_deriv=1)
-        dql = builder.get_model_states(self.simple_lift_name, time_deriv=1)
-        dqe = builder.get_model_states(self.simple_extension_name, time_deriv=1)
-        dqw = builder.get_model_states(self.simple_wrist_yaw_name, time_deriv=1)
+
         #builder.add_cost_term("min_join_vel", 0.01 * optas.sumsqr(dQ))
         builder.add_cost_term("min_base_vel", 0.01 * optas.sumsqr(dX))
-        builder.add_cost_term("min_lift_vel", 0.01 * optas.sumsqr(dql))
-        builder.add_cost_term("min_extension_vel", 0.01 * optas.sumsqr(dqe))
-        builder.add_cost_term("min_wrist_vel", 0.01 * optas.sumsqr(dqw))
+        builder.add_cost_term("min_joint_vel", 0.01 * optas.sumsqr(dQ))
+
 
         # Prevent rotation in end-effector
         # quatc = self.stretch.get_global_link_quaternion(link_ee, qc)
@@ -274,10 +228,8 @@ class Planner(Manager):
     def plan(self):
         self.solve()
         solution = self.get_target()
-        return solution[f"{self.planar_mobile_base_name}/y"], \
-               solution[f"{self.simple_lift_name}/y"], \
-               solution[f"{self.simple_extension_name}/y"], \
-               solution[f"{self.simple_wrist_yaw_name}/y"]
+        return solution[f"{self.stretch_name}/q"], \
+               solution[f"{self.planar_mobile_base_name}/y"]
 
     def adjoint_matrix(self, T):
         R = T[0:3, 0:3]
@@ -295,23 +247,17 @@ class Planner(Manager):
         return Ad_T
 
     def get_base_jacobian(self, q, x):
-        T_0e = self.stretch.get_global_link_transform("link_grasp_center", q)
-        T_be_inv = invt(T_0e)
-        T_bw = cs.vertcat(cs.horzcat(cs.cos(x[2]), -cs.sin(x[2]), 0, x[0]),
-                            cs.horzcat(cs.sin(x[2]), cs.cos(x[2]),  0, x[1]),
-                            cs.horzcat(0,            0,             1, 0),
-                            cs.horzcat(0,            0,             0, 1))
-        T_bw_inv = invt(T_bw)
-
-        F_6 = cs.vertcat(cs.horzcat(1, 0),
-                         cs.horzcat(0, 0),
+        q_full = cs.vertcat(x, q)
+        T_be = self.stretch_full.get_link_transform("link_grasp_center", q_full, "base_link")
+        
+        F_6 = cs.vertcat(cs.horzcat(cs.cos(x[2]), 0),
+                         cs.horzcat(cs.sin(x[2]), 0),
                          cs.horzcat(0, 0),
                          cs.horzcat(0, 0),
                          cs.horzcat(0, 0),
                          cs.horzcat(0, 1))
         
-        Ad_T_0e = self.adjoint_matrix(T_be_inv * T_bw_inv)
-
+        Ad_T_0e = self.adjoint_matrix(T_be)
 
         jacobian_base = Ad_T_0e @ F_6
         return jacobian_base
@@ -353,8 +299,8 @@ def main(arg="figure_eight"):
         path[:, k] = pn.flatten() + Rn @ path[:, k]
 
     planner.reset(qc, qn, path)
-    mobile_base_plan, lift_plan, extension_plan, wrist_yaw_plan = planner.plan()
-    stretch_full_plan = cs.vertcat(mobile_base_plan, lift_plan, extension_plan/4, extension_plan/4, extension_plan/4, extension_plan/4, wrist_yaw_plan)
+    stretch_plan, mobile_base_plan = planner.plan()
+    stretch_full_plan = cs.vertcat(mobile_base_plan, stretch_plan)
 
     path_actual = np.zeros((3, planner.T))
     for k in range(planner.T):
