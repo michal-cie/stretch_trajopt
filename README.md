@@ -19,7 +19,6 @@ This example runs in python 3.8 and last i checked the optas visualization is br
 ```python3 your/path/to/script/stretch_traj_opt.py figure_eight```  
 ```python3 your/path/to/script/stretch_traj_opt.py three_point```
 
+https://github.com/michal-cie/stretch_trajopt/assets/90311578/0a099fc4-f9e8-4839-bba0-8a4553e4575c
 
-https://github.com/michal-cie/stretch_trajopt/assets/90311578/75120602-262f-4d08-91e3-6aca515f0d0a
-
-https://github.com/michal-cie/stretch_trajopt/assets/90311578/cfe14bba-c59f-4b52-a415-a6beed4e7587
+https://github.com/michal-cie/stretch_trajopt/assets/90311578/ee52454b-f21a-4c48-8f3a-7b621dc6f54e
