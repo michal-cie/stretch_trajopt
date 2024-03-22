@@ -5,6 +5,7 @@ import numpy as np
 import casadi as cs
 
 import optas
+from optas.spatialmath import *
 from optas.visualize import Visualizer
 from optas.templates import Manager
 
@@ -33,8 +34,8 @@ class Planner(Manager):
         # =====================================
 
         # Setup
-        self.T = 200  # no. time steps in trajectory
-        self.Tmax = 20.0  # total trajectory time
+        self.T = 40  # no. time steps in trajectory
+        self.Tmax = 2.0  # total trajectory time
         t_ = optas.linspace(0, self.Tmax, self.T)
         self.t_ = t_
         self.dt = float((t_[1] - t_[0]).toarray()[0, 0])
@@ -94,7 +95,8 @@ class Planner(Manager):
         )  # nominal robot joint configuration
         base_init = builder.add_parameter("mobile_base_init", 3)
         path = builder.add_parameter("path", 3, self.T)
-
+        q_full_init = cs.vertcat(base_init, qc)
+        quat_init = self.stretch_full.get_global_link_quaternion("link_grasp_center", q_full_init)
         # Constraint: initial arm configuration
         builder.fix_configuration(self.stretch_name, config=qc)
         # Constraint: initial joint vel is zero
@@ -149,7 +151,17 @@ class Planner(Manager):
                                             x + self.dt * cs.vertcat(dx, dy, dtheta),
                                             reduce_constraint=True)
         #################################################################
-            
+        
+        ### example orientation constraint
+        q_full_init = cs.vertcat(base_init, qc)
+        quat_init = self.stretch_full.get_global_link_quaternion("link_grasp_center", q_full_init)
+        quat_des = Quaternion(quat_init[0], quat_init[1], quat_init[2], quat_init[3])
+        for t in range(self.T):
+            quat_current_ = self.stretch_full.get_global_link_quaternion("link_grasp_center", Q_full[:, t])
+            quat_current = Quaternion(quat_current_[0], quat_current_[1], quat_current_[2], quat_current_[3])
+            quat_error = quat_des * quat_current.inv()
+            builder.add_cost_term(f"orientation_error{t}", 1e4 * optas.sumsqr(quat_error.getrpy()))
+        
         # End effector position trajectory
         pos_full = self.stretch_full.get_global_link_position_function(link_ee, n=self.T)
         pos_ee = pos_full(Q_full)  # 3-by-T position trajectory for end-effector (FK)
@@ -166,10 +178,10 @@ class Planner(Manager):
         builder.add_cost_term("min_join_vel", 0.01 * optas.sumsqr(dQ))
         builder.add_cost_term("min_base_vel", 0.01 * optas.sumsqr(dX))
 
-        # Prevent rotation in end-effector
+        # # Prevent rotation in end-effector
         # quatc = self.stretch.get_global_link_quaternion(link_ee, qc)
-        # quat = self.stretch.get_global_link_quaternion_function(link_ee, n=self.T)
-        # builder.add_equality_constraint("no_eff_rot", quat(Q), quatc)
+        # quat = self.stretch_full.get_global_link_quaternion_function(link_ee, n=self.T)
+        # builder.add_equality_constraint("no_eff_rot", quat(Q_full), quatc)
 
         # Setup solver
         optimization = builder.build()
@@ -211,6 +223,7 @@ def main(arg="figure_eight"):
 
     pn = cs.DM(planner.stretch.get_global_link_position("link_grasp_center", qc)).full()
     Rn = cs.DM(planner.stretch.get_global_link_rotation("link_grasp_center", qc)).full()
+
     t  = cs.DM(planner.t_).full()
 
     if arg == "figure_eight":
