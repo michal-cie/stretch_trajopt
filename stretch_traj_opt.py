@@ -152,7 +152,7 @@ class Planner(Manager):
                                             reduce_constraint=True)
         #################################################################
         
-        ### example orientation constraint
+        ### example orientation cost
         q_full_init = cs.vertcat(base_init, qc)
         quat_init = self.stretch_full.get_global_link_quaternion("link_grasp_center", q_full_init)
         quat_des = Quaternion(quat_init[0], quat_init[1], quat_init[2], quat_init[3])
