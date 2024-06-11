@@ -1,2 +1,9 @@
+__pycache__/
+*.egg-info
+
+# dev
+src/_wip/
 *.vscode
+
+# data
 *.json

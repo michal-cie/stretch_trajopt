@@ -1,0 +1,19 @@
+[project]
+name = "stretch_planner"
+version = "0.1.0"
+dependencies = [
+    "casadi",
+    "numpy",
+    "pyoptas",
+    "scipy",
+    "urchin",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
